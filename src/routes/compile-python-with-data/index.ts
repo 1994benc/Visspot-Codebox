@@ -1,6 +1,6 @@
-import { FastifyPluginAsync } from "fastify";
+import { FastifyBaseLogger, FastifyPluginAsync } from "fastify";
 import { compilePython } from "../../compilers/compilePython";
-import multipart, { MultipartFile } from "@fastify/multipart";
+import { MultipartFile } from "@fastify/multipart";
 import * as pump from "pump";
 import * as fs from "fs";
 
@@ -9,13 +9,13 @@ const compilePythonRoute: FastifyPluginAsync = async (
   fastify,
   opts
 ): Promise<void> => {
-  fastify.register(multipart);
+  fastify.register(require('@fastify/multipart'));
 
   /**
    * This route accepts a multipart/form-data request with the following parts
    * - "code" = Python file to run (required)
    * - "data" = An input csv file. This will be accessible from the same folder as the python file (optional)
-   * 
+   *
    * URL params:
    * - "processorId" = A unique key to identify the Visspot processor node. This will be used to create a folder in the docker volume
    * - "sessionId" = A unique key to identify the Visspot session. This will be used to create a folder in the docker volume
@@ -34,14 +34,17 @@ const compilePythonRoute: FastifyPluginAsync = async (
    */
   fastify.post<{
     Params: {
-      processorId: string;
       sessionId: string;
     };
-  }>("/:processorId/:sessionId", async function (request, reply) {
+  }>("/:sessionId", async function (request, reply) {
     try {
-      const { processorId, sessionId } = request.params;
+      const { sessionId } = request.params;
 
-      const containerKey = processorId + "_" + sessionId;
+      const containerKey = sessionId;
+      await removeDirectoryIfExists(
+        `./src/python-box/${containerKey}`,
+        fastify.log
+      );
       createDockerVolumeFolderForProcessorIfNotExist(containerKey);
 
       const files = await request.files();
@@ -53,23 +56,24 @@ const compilePythonRoute: FastifyPluginAsync = async (
             error: "Something went wrong while uploading the file",
           });
         }
-        await storeUploadedFileInProcessorFolder(
-          containerKey,
-          fileName,
-          part
-        );
+        await storeUploadedFileInProcessorFolder(containerKey, fileName, part);
       }
 
-      const output = await compilePython(this.log, containerKey);
-      this.log.debug({ output });
+      const { stdout, stderr } = await compilePython(this.log, containerKey);
+      
+      this.log.info({ stdout, stderr });
+      this.log.info("SOME COOL INFO")
 
       return {
-        output: extractCodeOutputFromStdOut(output.stdout),
-        error: output.stderr,
+        output: stdout,
+        error: stderr,
       };
     } catch (error: any) {
       this.log.error({ erro: error });
-      return { error: error.message || "Something went wrong while compiling your code" };
+      return {
+        error:
+          error.message || "Something went wrong while compiling your code",
+      };
     }
   });
 };
@@ -103,11 +107,21 @@ function createDockerVolumeFolderForProcessorIfNotExist(folderId: string) {
   }
 }
 
-function extractCodeOutputFromStdOut(stdOut: string): string {
-  // split by new line and remove the first element
-  const stdOutLines = stdOut.split("\n");
-  stdOutLines.shift();
-  return stdOutLines.join("\n");
+// function extractCodeOutputFromStdOut(stdOut: string): string {
+//   // split by new line and remove the first element
+//   const stdOutLines = stdOut.split("\n");
+//   stdOutLines.shift();
+//   return stdOutLines.join("\n");
+// }
+
+async function removeDirectoryIfExists(
+  directoryPath: string,
+  log: FastifyBaseLogger
+) {
+  if (fs.existsSync(directoryPath)) {
+    log.debug(`Removing directory ${directoryPath}`);
+    fs.rmdirSync(directoryPath, { recursive: true });
+  }
 }
 
 export default compilePythonRoute;

@@ -1,68 +1,69 @@
-import { exec } from "child_process";
 import { FastifyBaseLogger } from "fastify";
-import * as fs from "fs";
+import { execAsync } from "../utils/execAsync";
 
 // TODO: improve test coverage
-export const compilePython = async (log: FastifyBaseLogger, containerUniqueKey: string): Promise<{
-    stdout: string;
-    stderr: string;
+export const compilePython = async (
+  log: FastifyBaseLogger,
+  containerUniqueKey: string
+): Promise<{
+  stdout: string;
+  stderr: string;
 }> => {
-
   const pathToDockerFolder = getCurrentPath() + "/src/python-box";
+  const volumeDirectoryPath = `${pathToDockerFolder}/${containerUniqueKey}`;
 
-  // remove result_data.csv if it exists
-  try {
-    await fs.promises.unlink(`${pathToDockerFolder}/result_data.csv`);
-  } catch (error) {
-    log.debug("result_data.csv does not exist");
+  const makeDirectoryCommand = `mkdir -p ${volumeDirectoryPath}`;
+  const { stdout: stdoutMakeDirectory, stderr: stderrMakeDirectory } =
+    await execAsync(makeDirectoryCommand);
+  log.debug({ stdoutMakeDirectory });
+  log.debug({ stderrMakeDirectory });
+  if (stderrMakeDirectory) {
+    throw new Error(stderrMakeDirectory);
+  }
+  const copyFileCommand = `cp -r ${pathToDockerFolder}/Dockerfile ${volumeDirectoryPath}`;
+  const { stdout: stdoutCopyFile, stderr: stderrCopyFile } = await execAsync(
+    copyFileCommand
+  );
+  log.debug({ stdoutCopyFile });
+  log.debug({ stderrCopyFile });
+  if (stderrCopyFile) {
+    throw new Error(stderrCopyFile);
+  }
+  const dockerBuildCommand = `docker build --quiet -t ${containerUniqueKey} ${volumeDirectoryPath}`;
+  const { stdout: stdoutDockerBuild, stderr: stderrDockerBuild } =
+    await execAsync(dockerBuildCommand);
+  log.debug({ stdoutDockerBuild });
+  log.debug({ stderrDockerBuild });
+  if (stderrDockerBuild) {
+    throw new Error(stderrDockerBuild);
   }
 
-  // remove output.txt if it exists
-  try {
-    await fs.promises.unlink(`${pathToDockerFolder}/output.txt`);
-  } catch (error) {
-    log.debug("output.txt does not exist");
+  const dockerRunCommand = `echo $(docker run --rm -i -v ${volumeDirectoryPath}:/usr/app/src ${containerUniqueKey})`;
+  const { stdout: stdoutDockerRun, stderr: stderrDockerRun } = await execAsync(
+    dockerRunCommand
+  );
+  log.info({ stdoutDockerRun });
+  log.debug({ stderrDockerRun });
+
+  const removeDirectoryCommand = `rm -rf ${volumeDirectoryPath}`;
+  const { stdout: stdoutRemoveDirectory, stderr: stderrRemoveDirectory } =
+    await execAsync(removeDirectoryCommand);
+  log.debug({ stdoutRemoveDirectory });
+  log.debug({ stderrRemoveDirectory });
+  if (stderrRemoveDirectory) {
+    throw new Error(stderrRemoveDirectory);
   }
 
-  //   give permission to execute the script
-  const command = `chmod +x ${pathToDockerFolder}/compile.sh`;
+  log.info({ stdoutDockerRun });
 
-  const promise = new Promise<{
-    stdout: string;
-    stderr: string;
-}>((resolve, reject) => {
-    exec(command, (error, stdout, stderr) => {
-      if (error) {
-        log.error({ error });
-        reject(error);
-        return;
-      }
-      log.info({ stdout });
-      log.info({ stderr });
-      const command =
-        "sh " + pathToDockerFolder + "/compile.sh " + pathToDockerFolder + " " + containerUniqueKey;
-      log.info("Running command: " + command);
-      exec(command, (error, stdout, stderr) => {
-        if (!error) {
-          resolve({
-            stdout,
-            stderr,
-          });
-        } else {
-          reject(error);
-        }
-        console.log({
-          error,
-          stdout,
-          stderr,
-        });
-      });
-    });
-  });
-
-  return promise;
+  return {
+    stdout: stdoutDockerRun,
+    stderr: stderrDockerRun,
+  };
 };
 
 export const getCurrentPath = (): string => {
   return process.cwd();
 };
+
+
