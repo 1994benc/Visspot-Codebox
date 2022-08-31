@@ -17,7 +17,6 @@ const compilePythonRoute: FastifyPluginAsync = async (
    * - "data" = An input csv file. This will be accessible from the same folder as the python file (optional)
    *
    * URL params:
-   * - "processorId" = A unique key to identify the Visspot processor node. This will be used to create a folder in the docker volume
    * - "sessionId" = A unique key to identify the Visspot session. This will be used to create a folder in the docker volume
    * TODO: If the code in the python file writes to a file named "result_data.csv" in its current directory then the route will return the contents of that file as a json array
    *
@@ -25,7 +24,7 @@ const compilePythonRoute: FastifyPluginAsync = async (
    * Example request:
    *
    * curl -X POST \
-   *  http://localhost:3000/compile-python \
+   *  http://localhost:3000/compile-python/1234 \
    * -H 'Content-Type: multipart/form-data' \
    * -F code=@./code.py \
    * -F data=@./data.csv
